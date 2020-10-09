@@ -8,12 +8,26 @@ typedef uint64_t u64;
 typedef uint32_t u32;
 typedef uint16_t u16;
 typedef uint8_t u8;
-typedef size_t memory_index;
 
 typedef int64_t s64;
 typedef int32_t s32;
 typedef int16_t s16;
 typedef int8_t s8;
+
+#if DEVELOP_MODE
+#define Assert(Expression) if (!(Expression)) *((int *)0) = 0;
+#else
+#define Assert(Expression)
+#endif
+
+#define InvalidCodePath Assert(0)
+#define InvalidDefaultCase default: {InvalidCodePath;} break;
+
+struct file_content
+{
+    u8 *Data;
+    u32 Size;
+};
 
 enum chipher_op_type
 {
@@ -32,14 +46,114 @@ struct string
 struct chipher_state
 {
     int OpType;
-    string InputString;
     char *InputFile;
     char *OutputFile;
+
+    union
+    {
+        string InputString;
+
+        struct
+        {
+            u8 *Data;
+            u32 Size;
+        } InputData;
+    };
+};
+
+enum exec_error
+{
+    Exec_ParseError_InFileName = -8,
+    Exec_ParseError_InFileSet,
+    Exec_ParseError_InStrSet,
+    Exec_ParseError_InNotSet,
+    Exec_ParseError_OutFileName,
+    Exec_ParseError_OpNotSet,
+    Exec_ParseError_ArgCount,
+    Exec_FileError_Open,
+
+    ExecError_None = 0,
 };
 
 void
-SetLokiArgs(chipher_state *State, char **Args)
+DispatchError(s32 Error, char *Name = 0)
 {
+    switch (Error)
+    {
+        case Exec_ParseError_InFileName:
+        {
+           printf("Error: After -f must be filename\n");
+        } break;
+
+        case Exec_ParseError_InFileSet:
+        {
+            printf("Error: Input file already set, require to set only file or string\n");
+        } break;
+
+        case Exec_ParseError_InStrSet:
+        {
+            printf("Error: Input string already set, require to set only file or string\n");
+        } break;
+
+        case Exec_ParseError_InNotSet:
+        {
+            printf("Error: Input don't set");
+        }
+
+        case Exec_ParseError_OutFileName:
+        {
+            printf("Error: After -o must be filename\n");                
+        } break;
+
+        case Exec_ParseError_OpNotSet:
+        {
+            printf("Error: Type of operation must be choosen encrypt[-e] or decrypt[-d]\n");                
+        } break;
+
+        case Exec_ParseError_ArgCount:
+        {
+            printf("Error: Not enought argument\n");                
+        } break;
+
+        case Exec_FileError_Open:
+        {
+            char Buff[256];
+            snprintf(Buff, sizeof(Buff), "Error: Cannot open %s file\n", Name);
+            printf(Buff);
+        }
+
+        InvalidDefaultCase;
+    }
+
+    printf("loki -[e | d] [-f filename | string] [-o filename]\n");
+}
+
+file_content
+ReadEntireFileIntoMemory(char *FileName)
+{
+    file_content Result = {};
+
+    FILE *File = fopen(FileName, "r");
+    if (File)
+    {
+        fseek(File, 0, SEEK_END);
+        size_t FileSize = ftell(File);
+        Result.Data = (u8 *)malloc(FileSize);
+
+        Result.Size = FileSize;
+        fread(Result.Data, FileSize, 1, File);
+
+        fclose(File);
+    }
+
+    return Result;
+}
+
+exec_error
+SetChipherArgs(chipher_state *State, char **Args)
+{
+    exec_error Error = ExecError_None;
+
     for (;*Args;)
     {
         if (strcmp(*Args, "-f") == 0)
@@ -53,14 +167,14 @@ SetLokiArgs(chipher_state *State, char **Args)
                 }
                 else
                 {
-                    // TODO: Handle Error
+                    Error = Exec_ParseError_InFileName;
+                    break;
                 }
             }
             else
             {
-                printf("Input already set");
-				break;
-                // TODO: Handle Error
+                Error = Exec_ParseError_InStrSet;
+                break;
             }
         }
         else if (strcmp(*Args, "-o") == 0)
@@ -72,7 +186,8 @@ SetLokiArgs(chipher_state *State, char **Args)
             }
             else
             {
-                // TODO: Handle Error
+               Error = Exec_ParseError_OutFileName;
+               break;
             }
         }
         else
@@ -90,7 +205,6 @@ SetLokiArgs(chipher_state *State, char **Args)
                     if ((strcmp(CurrArg, "-f") != 0) && (strcmp(CurrArg, "-o") != 0))
                     {
                         TotalLen += (strlen(CurrArg) + 1);
-                        printf("%s\n", CurrArg);
                     }
                     else
                     {
@@ -115,46 +229,98 @@ SetLokiArgs(chipher_state *State, char **Args)
                 *Dest = 0;
                 printf("Sting: %s\n", State->InputString.Data);
             }
+            else
+            {
+                Error = Exec_ParseError_InFileSet;
+                break;
+            }
         }
-    }   
+    }
+
+    return Error;
 }
 
-chipher_state
-InitChiperState(int ArgCount, char **Args)
+exec_error
+InitChiperState(chipher_state *State, int ArgCount, char **Args)
 {
-    chipher_state Result = {};
+    exec_error Error = ExecError_None;
 
     if (ArgCount > 2)
     {
         if (strcmp(Args[1], "-e") == 0)
         {
-            Result.OpType = ChipherOpType_Encrypt;
+            State->OpType = ChipherOpType_Encrypt;
         }
         else if (strcmp(Args[1], "-d") == 0)
         {
-            Result.OpType = ChipherOpType_Decrypt;
+            State->OpType = ChipherOpType_Decrypt;
         }
         
-        if (Result.OpType != ChipherOpType_None)
+        if (State->OpType != ChipherOpType_None)
         {
-            SetLokiArgs(&Result, Args + 2);
+            Error = SetChipherArgs(State, Args + 2);
+
+            if (Error == ExecError_None)
+            {
+                if (!State->InputFile && !State->InputString.Data)
+                {
+                    Error = Exec_ParseError_InNotSet;
+                }
+            }
         }
         else
         {
-            // TODO: Handle error
+            Error = Exec_ParseError_OpNotSet;
         }
     }
     else
     {
-        // TODO: Handle error
+        Error = Exec_ParseError_ArgCount;
     }
 
-    return Result;
+    return Error;
 }
 
-// loki -e[d] [-f filename | string] [-o filename]
 int
 main(int ArgCount, char **Args)
 {
-    chipher_state LokiState = InitChiperState(ArgCount, Args);
+    chipher_state LokiState = {};
+
+    exec_error Error = InitChiperState(&LokiState, ArgCount, Args);
+    if (Error == ExecError_None)
+    {
+        if (LokiState.InputFile)
+        {
+            file_content InputFileContent = ReadEntireFileIntoMemory(LokiState.InputFile);
+            if (InputFileContent.Data)
+            {
+                LokiState.InputData.Data = InputFileContent.Data;
+                LokiState.InputData.Size = InputFileContent.Size;
+            }
+            else
+            {
+                DispatchError(Exec_FileError_Open, LokiState.InputFile);
+            }
+        }
+
+        // TODO: Call encr decr function here
+        switch (LokiState.OpType)
+        {
+            case ChipherOpType_Encrypt:
+            {
+
+            } break;
+
+            case ChipherOpType_Decrypt:
+            {
+
+            } break;
+        }
+    }
+    else
+    {
+        DispatchError(Error);
+    }
+
+    return (s32)Error;
 }
