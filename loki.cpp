@@ -284,27 +284,27 @@ InitChiperState(chipher_state *State, int ArgCount, char **Args)
 int
 main(int ArgCount, char **Args)
 {
-    chipher_state LokiState = {};
+    chipher_state ChiperState = {};
 
-    exec_error Error = InitChiperState(&LokiState, ArgCount, Args);
+    exec_error Error = InitChiperState(&ChiperState, ArgCount, Args);
     if (Error == ExecError_None)
     {
-        if (LokiState.InputFile)
+        if (ChiperState.InputFile)
         {
-            file_content InputFileContent = ReadEntireFileIntoMemory(LokiState.InputFile);
+            file_content InputFileContent = ReadEntireFileIntoMemory(ChiperState.InputFile);
             if (InputFileContent.Data)
             {
-                LokiState.InputData.Data = InputFileContent.Data;
-                LokiState.InputData.Size = InputFileContent.Size;
+                ChiperState.InputData.Data = InputFileContent.Data;
+                ChiperState.InputData.Size = InputFileContent.Size;
             }
             else
             {
-                DispatchError(Exec_FileError_Open, LokiState.InputFile);
+                DispatchError(Exec_FileError_Open, ChiperState.InputFile);
             }
         }
 
         // TODO: Call encr decr function here
-        switch (LokiState.OpType)
+        switch (ChiperState.OpType)
         {
             case ChipherOpType_Encrypt:
             {
