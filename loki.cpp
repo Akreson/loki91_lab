@@ -75,6 +75,31 @@ enum exec_error
     ExecError_None = 0,
 };
 
+inline u32
+GetAlignmentOffsetForwad(u32 Value, u32 Alignment)
+{
+	Assert(!(Alignment & (Alignment - 1)));
+
+	u32 AlignOffset = 0;
+	u32 AlignMask = Alignment - 1;
+	u32 OffsetFromMask = (Value & AlignMask);
+
+	if (OffsetFromMask)
+	{
+		AlignOffset = Alignment - OffsetFromMask;
+	}
+
+	return AlignOffset;
+}
+
+inline u32
+AlignSize(u32 DataSize)
+{
+    u32 AlignOffset = GetAlignmentOffsetForwad(DataSize, 8);
+    u32 Result = DataSize + AlignOffset;
+    return Result;
+}
+
 void
 DispatchError(s32 Error, char *Name = 0)
 {
@@ -138,9 +163,9 @@ ReadEntireFileIntoMemory(char *FileName)
     {
         fseek(File, 0, SEEK_END);
         size_t FileSize = ftell(File);
-        Result.Data = (u8 *)malloc(FileSize);
+        Result.Size = AlignSize(FileSize);
 
-        Result.Size = FileSize;
+        Result.Data = (u8 *)calloc(Result.Size);
         fread(Result.Data, FileSize, 1, File);
 
         fclose(File);
@@ -213,8 +238,9 @@ SetChipherArgs(chipher_state *State, char **Args)
                 }
                 Args = EndArgs;
                 TotalLen++;
+                TotalLen = AlignSize(TotalLen);
 
-                State->InputString.Data = (char *)malloc(TotalLen * sizeof(char));
+                State->InputString.Data = (char *)calloc(TotalLen * sizeof(char));
                 State->InputString.Len = TotalLen;
 
                 char *Dest = State->InputString.Data;
