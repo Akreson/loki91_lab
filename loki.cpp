@@ -351,8 +351,8 @@ main(int ArgCount, char **Args)
 
     return (s32)Error;
 }
-
-void
+ 
+s32
 test(void)
 {
     loki_key Key = {};
