@@ -351,3 +351,72 @@ main(int ArgCount, char **Args)
 
     return (s32)Error;
 }
+
+void
+test(void)
+{
+    loki_key Key = {};
+    Key.L = 0x12345678;
+    Key.R = 0x09ABCDEF;
+    
+    // Encrypt
+    char *EnText = "Hellow world from chipher";
+    u32 EnLen = strlen(EnText);
+
+    u32 EnAdjLen = AlignSize(EnLen);
+
+    u8 *EnTest = (u8 *)calloc(EnAdjLen, sizeof(u8));
+    memcpy(EnTest, EnText, EnLen);
+
+    u8 *EnDestMem = (u8 *)calloc(EnAdjLen, sizeof(u8));
+
+    LokiEncrypt(Key, EnTest, EnAdjLen, EnDestMem);
+    
+    for (u32 i = 0; i < EnAdjLen; ++i)
+    {
+        printf("%X", EnDestMem[i]);
+    }
+    printf("\n");
+    
+    
+    const u8 DecByte[] = {0xE2,0x99,0x27,0x14,0x19,0x36,0xBB,0xF7,0x4D,0xF6,0x55,0xFD,0x95,0xD0,0x1D,0x5E,0xDE,0x1D,0x66,0x6D,0xE2,0xBB,0xC1,0x88,0x9E,0xED,0x9C,0x51,0xC8,0xCB,0xBC,0x35};
+    u32 DecLen = sizeof(DecByte);
+    
+    if (DecLen != EnAdjLen)
+    {
+        printf("Length don't match");
+        return -1;
+    }
+
+    for (u32 i = 0; i < DecLen; ++i)
+    {
+        if (DecByte[i] != EnDestMem[i])
+        {
+            printf("Encypted data don't match");
+            return -1;
+        }
+    }
+    
+    u32 DecAdjLen = AlignSize(DecLen);
+
+    u8 *DecTest = (u8 *)calloc(DecAdjLen, sizeof(u8));
+    memcpy(DecTest, DecByte, DecLen);
+
+    u8 *DecDestMem = (u8 *)calloc(DecAdjLen, sizeof(u8));
+
+    LokiDecrypt(Key, DecTest, DecAdjLen, DecDestMem);
+
+    for (u32 i = 0; i < DecAdjLen; ++i)
+    {
+        printf("%c", DecDestMem[i]);
+    }
+
+	for (u32 i = 0; i < DecAdjLen; ++i)
+	{
+		if (EnTest[i] != DecDestMem[i])
+		{
+			printf("Plain data don't match");
+			return -1;
+		}
+	}
+}

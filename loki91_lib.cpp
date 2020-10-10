@@ -55,6 +55,7 @@ struct loki_key
 {
     union
     {
+        u64 Value;
         u8 Byte[8];
 
         struct
