@@ -165,7 +165,7 @@ ReadEntireFileIntoMemory(char *FileName)
         size_t FileSize = ftell(File);
         Result.Size = AlignSize(FileSize);
 
-        Result.Data = (u8 *)calloc(Result.Size);
+        Result.Data = (u8 *)calloc(Result.Size, sizeof(u8));
         fread(Result.Data, FileSize, 1, File);
 
         fclose(File);
@@ -240,7 +240,7 @@ SetChipherArgs(chipher_state *State, char **Args)
                 TotalLen++;
                 TotalLen = AlignSize(TotalLen);
 
-                State->InputString.Data = (char *)calloc(TotalLen * sizeof(char));
+                State->InputString.Data = (char *)calloc(TotalLen * sizeof(char), sizeof(u8));
                 State->InputString.Len = TotalLen;
 
                 char *Dest = State->InputString.Data;
@@ -307,6 +307,7 @@ InitChiperState(chipher_state *State, int ArgCount, char **Args)
     return Error;
 }
 
+// TODO: Set key input
 int
 main(int ArgCount, char **Args)
 {
