@@ -1,81 +1,5 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdint.h>
+#include "loki.h"
 #include "loki91_lib.cpp"
-
-typedef uint64_t u64;
-typedef uint32_t u32;
-typedef uint16_t u16;
-typedef uint8_t u8;
-
-typedef int64_t s64;
-typedef int32_t s32;
-typedef int16_t s16;
-typedef int8_t s8;
-
-#if DEVELOP_MODE
-#define Assert(Expression) if (!(Expression)) *((int *)0) = 0;
-#else
-#define Assert(Expression)
-#endif
-
-#define InvalidCodePath Assert(0)
-#define InvalidDefaultCase default: {InvalidCodePath;} break;
-
-struct file_content
-{
-    u8 *Data;
-    u32 Size;
-};
-
-enum chipher_op_type
-{
-    ChipherOpType_None,
-
-    ChipherOpType_Encrypt,
-    ChipherOpType_Decrypt,
-};
-
-struct string
-{
-    char *Data;
-    u32 Len;
-};
-
-struct chipher_state
-{
-    int OpType;
-    char *InputFileName;
-    char *OutputFileName;
-
-    u8 *ResultOutput;
-
-    union
-    {
-        string InputString;
-
-        struct
-        {
-            u8 *Data;
-            u32 Size;
-        } InputData;
-    };
-};
-
-enum exec_error
-{
-    Exec_ParseError_InFileName = -8,
-    Exec_ParseError_InFileSet,
-    Exec_ParseError_InStrSet,
-    Exec_ParseError_InNotSet,
-    Exec_ParseError_OutFileName,
-    Exec_ParseError_OpNotSet,
-    Exec_ParseError_ArgCount,
-    Exec_FileError_Open,
-
-    ExecError_None = 0,
-};
 
 inline u32
 GetAlignmentOffsetForwad(u32 Value, u32 Alignment)
@@ -139,7 +63,17 @@ DispatchError(s32 Error, char *Name = 0)
 
         case Exec_ParseError_ArgCount:
         {
-            printf("Error: Not enought argument\n");                
+            printf("Error: Not enought argument\n");
+        } break;
+
+        case Exec_ParseError_KeyFlag:
+        {
+            printf("Error: Invalid key flag, allowed variation -k[h | f]\n");
+        } break;
+
+        case Exec_ParamError_NotHexStr:
+        {
+            printf("Error: -kh argument contain not hex charaster");
         } break;
 
         case Exec_FileError_Open:
@@ -217,6 +151,35 @@ WriteOutputToFile(chipher_state *State)
 }
 
 exec_error
+ReadKeyFromFile(u8 *Buff, char *FileName)
+{
+    exec_error Error = ExecError_None;
+
+    FILE *File = fopen(FileName, "r");
+
+    if (File)
+    {
+        fseek(File, 0, SEEK_END);
+        size_t FileSize = ftell(File);
+
+        if (FileSize >= LOKI_KEY_SIZE)
+        {
+            fread(Buff, LOKI_KEY_SIZE, 1, File);
+        }
+        else
+        {
+            fread(Buff, FileSize, 1, File);
+        }
+    }
+    else
+    {
+        Error = Exec_FileError_Open;
+    }
+
+    return Error;
+}
+
+exec_error
 SetChipherArgs(chipher_state *State, char **Args)
 {
     exec_error Error = ExecError_None;
@@ -243,6 +206,8 @@ SetChipherArgs(chipher_state *State, char **Args)
                 Error = Exec_ParseError_InStrSet;
                 break;
             }
+
+            *++Args;
         }
         else if (strcmp(*Args, "-o") == 0)
         {
@@ -256,6 +221,42 @@ SetChipherArgs(chipher_state *State, char **Args)
                Error = Exec_ParseError_OutFileName;
                break;
             }
+
+            *++Args;
+        }
+        else if (((*Args)[0] == '-') && ((*Args)[1] == 'k'))
+        {
+            u32 KeyFlagLen = strlen(*Args);
+            if (KeyFlagLen == 3)
+            {
+                if ((*Args)[2] == 'h')
+                {
+                    State->InputKey.Type = KeyType_Hex;
+                }
+                else if ((*Args)[2] == 'f')
+                {
+                    State->InputKey.Type = KeyType_File;
+                }
+                else
+                {
+                    Error = Exec_ParseError_KeyFlag;
+                    break;
+                }
+            }
+            else if (KeyFlagLen > 3)
+            {
+                Error = Exec_ParseError_KeyFlag;
+                break;
+            }
+            else
+            {
+                State->InputKey.Type = KeyType_Str;
+            }
+
+            char *KeyValueStr = *++Args;
+            State->InputKey.Data = KeyValueStr;
+            State->InputKey.Len = strlen(KeyValueStr);
+            *++Args;
         }
         else
         {
@@ -349,51 +350,119 @@ InitChiperState(chipher_state *State, int ArgCount, char **Args)
     return Error;
 }
 
-// TODO: Set key input
+b32
+ScanHexString(u8 *Out, char *In, u32 Size)
+{
+    b32 Succes = true;
+
+    u32 Shift[] = {0, 4};
+    u32 ShiftToggle = 1;
+	u32 MoveOutPtr = 0;
+
+    for (u32 Index = 0;
+        Index < Size;
+        ++Index)
+    {
+        u8 OutValue = *Out;
+        char InValue = In[Index];
+        u8 Digit = CharToDigit[InValue];
+
+        if ((Digit == 0) && (InValue != '0'))
+        {
+            Succes = false;
+            break;
+        }
+
+        OutValue |= Digit << Shift[ShiftToggle];
+        *Out = OutValue;
+        Out += MoveOutPtr;
+        ShiftToggle = !ShiftToggle;
+		MoveOutPtr = !MoveOutPtr;
+    }
+
+    return Succes;
+}
+
+exec_error
+InitLokiKey(loki_key *Key, input_key InputKey)
+{
+    exec_error Error = ExecError_None;
+    
+    switch (InputKey.Type)
+    {
+        case KeyType_Str:
+        {
+            u32 StrKeyLen = InputKey.Len >= LOKI_KEY_SIZE ? LOKI_KEY_SIZE : InputKey.Len;
+            memcpy(Key->Buff, InputKey.Data, StrKeyLen);
+        } break;
+
+        case KeyType_Hex:
+        {
+            u32 HexByteLen = InputKey.Len / 2;
+            u32 KeyLen = HexByteLen >= LOKI_KEY_SIZE ? LOKI_KEY_SIZE*2 : InputKey.Len;
+
+            if (!ScanHexString(Key->Buff, InputKey.Data, KeyLen))
+            {
+                Error = Exec_ParamError_NotHexStr;
+            }
+        } break;
+        
+        case KeyType_File:
+        {
+            Error = ReadKeyFromFile(Key->Buff, InputKey.Data);
+        } break;
+
+        InvalidDefaultCase;
+    }
+    
+    return Error;
+}
+
+void
+StartChipherOperation(chipher_state *State, loki_key Key)
+{
+    switch (State->OpType)
+    {
+        case ChipherOpType_Encrypt:
+        {
+            LokiEncrypt(Key, State->InputData.Data, State->InputData.Size, State->ResultOutput);
+        } break;
+
+        case ChipherOpType_Decrypt:
+        {
+            LokiDecrypt(Key, State->InputData.Data, State->InputData.Size, State->ResultOutput);
+        } break;
+    }
+}
+
 int
 main(int ArgCount, char **Args)
 {
+    InitCharToDigitArr();
+
     chipher_state ChiperState = {};
-    loki_key Key = {};
 
     exec_error Error = InitChiperState(&ChiperState, ArgCount, Args);
     if (Error == ExecError_None)
     {
-        if (ChiperState.InputFileName)
+        loki_key Key = {};
+        //Error = InitLokiKey(&Key, ChiperState.InputKey);
+        Key.L = 0x123456;
+
+        if ((Error == ExecError_None) && ChiperState.InputFileName)
         {
             Error = InitDataFromFile(&ChiperState);
-            
-            if(Error != ExecError_None)
-            {
-                DispatchError(Error, ChiperState.InputFileName);
-            }
         }
 
         if (Error == ExecError_None)
         {
             ChiperState.ResultOutput = (u8 *)malloc(ChiperState.InputData.Size);
 
-            switch (ChiperState.OpType)
-            {
-                case ChipherOpType_Encrypt:
-                {
-                    LokiEncrypt(Key, ChiperState.InputData.Data, ChiperState.InputData.Size, ChiperState.ResultOutput);
-                } break;
-
-                case ChipherOpType_Decrypt:
-                {
-                    LokiDecrypt(Key, ChiperState.InputData.Data, ChiperState.InputData.Size, ChiperState.ResultOutput);
-                } break;
-            }
+            StartChipherOperation(&ChiperState, Key);
 
             if (ChiperState.OutputFileName)
             {
                 Error = WriteOutputToFile(&ChiperState);
-
-                if(Error != ExecError_None)
-                {
-                    DispatchError(Error, ChiperState.OutputFileName);
-                }
             }
             else
             {
@@ -401,9 +470,10 @@ main(int ArgCount, char **Args)
             }
         }
     }
-    else
+
+    if(Error != ExecError_None)
     {
-        DispatchError(Error);
+        DispatchError(Error, ChiperState.OutputFileName);
     }
 
     return (s32)Error;

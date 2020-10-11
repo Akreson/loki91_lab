@@ -12,6 +12,8 @@ typedef int8_t s8;
 
 #define internal static
 
+#define LOKI_KEY_SIZE 8
+
 #define ROUNDS	16
 #define BLOCK_SIZE 8
 #define MASK12	0x0fff
@@ -56,7 +58,7 @@ struct loki_key
     union
     {
         u64 Value;
-        u8 Byte[8];
+        u8 Buff[8];
 
         struct
         {
