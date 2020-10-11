@@ -46,8 +46,10 @@ struct string
 struct chipher_state
 {
     int OpType;
-    char *InputFile;
-    char *OutputFile;
+    char *InputFileName;
+    char *OutputFileName;
+
+    u8 *ResultOutput;
 
     union
     {
@@ -175,6 +177,46 @@ ReadEntireFileIntoMemory(char *FileName)
 }
 
 exec_error
+InitDataFromFile(chipher_state *State)
+{
+    exec_error Error = ExecError_None;
+
+    file_content InputFileContent = ReadEntireFileIntoMemory(State->InputFileName);
+    
+    if (InputFileContent.Data)
+    {
+        State->InputData.Data = InputFileContent.Data;
+        State->InputData.Size = InputFileContent.Size;
+    }
+    else
+    {
+        Error = Exec_FileError_Open;
+    }
+
+    return Error;
+}
+
+exec_error
+WriteOutputToFile(chipher_state *State)
+{
+    exec_error Error = ExecError_None;
+
+    FILE *File = fopen(State->OutputFileName, "w");
+
+    if (File)
+    {
+        fwrite(State->ResultOutput, sizeof(u8), State->InputData.Size, File);
+        fclose(File);
+    }
+    else
+    {
+        Error = Exec_FileError_Open;
+    }
+
+    return Error;
+}
+
+exec_error
 SetChipherArgs(chipher_state *State, char **Args)
 {
     exec_error Error = ExecError_None;
@@ -188,7 +230,7 @@ SetChipherArgs(chipher_state *State, char **Args)
                 char *FileName = *++Args;
                 if (FileName)
                 {
-                    State->InputFile = FileName;
+                    State->InputFileName = FileName;
                 }
                 else
                 {
@@ -207,7 +249,7 @@ SetChipherArgs(chipher_state *State, char **Args)
             char *FileName = *++Args;
             if (FileName)
             {
-                State->OutputFile = FileName;
+                State->OutputFileName = FileName;
             }
             else
             {
@@ -217,7 +259,7 @@ SetChipherArgs(chipher_state *State, char **Args)
         }
         else
         {
-            if (!State->InputFile)
+            if (!State->InputFileName)
             {
                 u32 TotalLen = 0;
                 char **StartArg = Args;
@@ -288,7 +330,7 @@ InitChiperState(chipher_state *State, int ArgCount, char **Args)
 
             if (Error == ExecError_None)
             {
-                if (!State->InputFile && !State->InputString.Data)
+                if (!State->InputFileName && !State->InputString.Data)
                 {
                     Error = Exec_ParseError_InNotSet;
                 }
@@ -312,36 +354,51 @@ int
 main(int ArgCount, char **Args)
 {
     chipher_state ChiperState = {};
+    loki_key Key = {};
 
     exec_error Error = InitChiperState(&ChiperState, ArgCount, Args);
     if (Error == ExecError_None)
     {
-        if (ChiperState.InputFile)
+        if (ChiperState.InputFileName)
         {
-            file_content InputFileContent = ReadEntireFileIntoMemory(ChiperState.InputFile);
-            if (InputFileContent.Data)
+            Error = InitDataFromFile(&ChiperState);
+            
+            if(Error != ExecError_None)
             {
-                ChiperState.InputData.Data = InputFileContent.Data;
-                ChiperState.InputData.Size = InputFileContent.Size;
-            }
-            else
-            {
-                DispatchError(Exec_FileError_Open, ChiperState.InputFile);
+                DispatchError(Error, ChiperState.InputFileName);
             }
         }
 
-        // TODO: Call encr decr function here
-        switch (ChiperState.OpType)
+        if (Error == ExecError_None)
         {
-            case ChipherOpType_Encrypt:
+            ChiperState.ResultOutput = (u8 *)malloc(ChiperState.InputData.Size);
+
+            switch (ChiperState.OpType)
             {
+                case ChipherOpType_Encrypt:
+                {
+                    LokiEncrypt(Key, ChiperState.InputData.Data, ChiperState.InputData.Size, ChiperState.ResultOutput);
+                } break;
 
-            } break;
+                case ChipherOpType_Decrypt:
+                {
+                    LokiDecrypt(Key, ChiperState.InputData.Data, ChiperState.InputData.Size, ChiperState.ResultOutput);
+                } break;
+            }
 
-            case ChipherOpType_Decrypt:
+            if (ChiperState.OutputFileName)
             {
+                Error = WriteOutputToFile(&ChiperState);
 
-            } break;
+                if(Error != ExecError_None)
+                {
+                    DispatchError(Error, ChiperState.OutputFileName);
+                }
+            }
+            else
+            {
+                fwrite(ChiperState.ResultOutput, sizeof(u8), ChiperState.InputData.Size, stdout);
+            }
         }
     }
     else
@@ -351,7 +408,9 @@ main(int ArgCount, char **Args)
 
     return (s32)Error;
 }
- 
+
+
+// NOTE: Test code
 s32
 test(void)
 {
@@ -378,8 +437,12 @@ test(void)
     }
     printf("\n");
     
-    
-    const u8 DecByte[] = {0xE2,0x99,0x27,0x14,0x19,0x36,0xBB,0xF7,0x4D,0xF6,0x55,0xFD,0x95,0xD0,0x1D,0x5E,0xDE,0x1D,0x66,0x6D,0xE2,0xBB,0xC1,0x88,0x9E,0xED,0x9C,0x51,0xC8,0xCB,0xBC,0x35};
+    const u8 DecByte[] = 
+    {
+        0xE2,0x99,0x27,0x14,0x19,0x36,0xBB,0xF7,0x4D,0xF6,0x55,0xFD,0x95,0xD0,0x1D,0x5E,
+        0xDE,0x1D,0x66,0x6D,0xE2,0xBB,0xC1,0x88,0x9E,0xED,0x9C,0x51,0xC8,0xCB,0xBC,0x35
+    };
+
     u32 DecLen = sizeof(DecByte);
     
     if (DecLen != EnAdjLen)
@@ -410,6 +473,7 @@ test(void)
     {
         printf("%c", DecDestMem[i]);
     }
+    printf("\n");
 
 	for (u32 i = 0; i < DecAdjLen; ++i)
 	{
