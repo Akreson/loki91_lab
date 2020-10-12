@@ -125,9 +125,7 @@ DispatchError(s32 Error, char *InName = 0, char *OutName = 0)
 
         case Exec_FileError_KeyOpen:
         {
-            char Buff[256];
-            snprintf(Buff, sizeof(Buff), "Error: Cannot open key sotore file\n");
-            printf(Buff);
+            printf("Error: Cannot open key sotore file\n");
         } break;
 
         InvalidDefaultCase;
