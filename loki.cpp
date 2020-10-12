@@ -100,6 +100,7 @@ ReadEntireFileIntoMemory(char *FileName)
         fseek(File, 0, SEEK_END);
         size_t FileSize = ftell(File);
         Result.Size = AlignSize(FileSize);
+		fseek(File, 0, SEEK_SET);
 
         Result.Data = (u8 *)calloc(Result.Size, sizeof(u8));
         fread(Result.Data, FileSize, 1, File);
@@ -296,7 +297,6 @@ SetChipherArgs(chipher_state *State, char **Args)
                     *Dest++ = ' ';
                 }
                 *Dest = 0;
-                printf("Sting: %s\n", State->InputString.Data);
             }
             else
             {
@@ -439,7 +439,7 @@ int
 main(int ArgCount, char **Args)
 {
     InitCharToDigitArr();
-
+    
     chipher_state ChiperState = {};
 
     exec_error Error = InitChiperState(&ChiperState, ArgCount, Args);
@@ -447,7 +447,8 @@ main(int ArgCount, char **Args)
     {
         loki_key Key = {};
         //Error = InitLokiKey(&Key, ChiperState.InputKey);
-        Key.L = 0x123456;
+        Key.L = 0xABCDEF90;
+        Key.R = 0x12345678;
 
         if ((Error == ExecError_None) && ChiperState.InputFileName)
         {
