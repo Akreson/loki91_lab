@@ -109,6 +109,11 @@ DispatchError(s32 Error, char *InName = 0, char *OutName = 0)
             printf("Error: -kh argument contain not hex charaster\n");
         } break;
 
+        case Exec_ParseError_Key:
+        {
+            printf("Error: Key not set\n");
+        } break;
+
         case Exec_FileError_InOpen:
         {
             char Buff[256];
@@ -376,13 +381,17 @@ InitChiperState(chipher_state *State, int ArgCount, char **Args)
         {
             Error = SetChipherArgs(State, Args + 2);
 
-            if (Error == ExecError_None)
+            if (Error == ExecError_None && 
+                (!State->InputFileName && !State->InputString.Data))
             {
-                if (!State->InputFileName && !State->InputString.Data)
-                {
-                    Error = Exec_ParseError_InNotSet;
-                }
+                Error = Exec_ParseError_InNotSet;
             }
+
+            if (Error == ExecError_None && !State->InputKey.Data)
+            {
+                Error = Exec_ParseError_Key;
+            }
+
         }
         else
         {
