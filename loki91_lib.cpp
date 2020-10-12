@@ -70,8 +70,16 @@ struct loki_key
 
 struct work_block
 {
-    u32 L;
-    u32 R;
+    union
+    {
+        u8 Buff[8];
+
+        struct
+        {
+            u32 L;
+            u32 R;
+        };
+    };
 };
 
 struct loki_subkeys

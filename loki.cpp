@@ -26,8 +26,41 @@ AlignSize(u32 DataSize)
     return Result;
 }
 
+b32
+ScanHexString(u8 *Out, char *In, u32 Size)
+{
+    b32 Succes = true;
+
+    u32 Shift[] = {0, 4};
+    u32 ShiftToggle = 1;
+	u32 MoveOutPtr = 0;
+
+    for (u32 Index = 0;
+        Index < Size;
+        ++Index)
+    {
+        u8 OutValue = *Out;
+        char InValue = In[Index];
+        u8 Digit = CharToDigit[InValue];
+
+        if ((Digit == 0) && (InValue != '0'))
+        {
+            Succes = false;
+            break;
+        }
+
+        OutValue |= Digit << Shift[ShiftToggle];
+        *Out = OutValue;
+        Out += MoveOutPtr;
+        ShiftToggle = !ShiftToggle;
+		MoveOutPtr = !MoveOutPtr;
+    }
+
+    return Succes;
+}
+
 void
-DispatchError(s32 Error, char *Name = 0)
+DispatchError(s32 Error, char *InName = 0, char *OutName = 0)
 {
     switch (Error)
     {
@@ -48,8 +81,8 @@ DispatchError(s32 Error, char *Name = 0)
 
         case Exec_ParseError_InNotSet:
         {
-            printf("Error: Input don't set");
-        }
+            printf("Error: Input don't set\n");
+        } break;
 
         case Exec_ParseError_OutFileName:
         {
@@ -73,20 +106,34 @@ DispatchError(s32 Error, char *Name = 0)
 
         case Exec_ParamError_NotHexStr:
         {
-            printf("Error: -kh argument contain not hex charaster");
+            printf("Error: -kh argument contain not hex charaster\n");
         } break;
 
-        case Exec_FileError_Open:
+        case Exec_FileError_InOpen:
         {
             char Buff[256];
-            snprintf(Buff, sizeof(Buff), "Error: Cannot open %s file\n", Name);
+            snprintf(Buff, sizeof(Buff), "Error: Cannot open input file - %s\n", InName);
             printf(Buff);
-        }
+        } break;
+
+        case Exec_FileError_OutOpen:
+        {
+            char Buff[256];
+            snprintf(Buff, sizeof(Buff), "Error: Cannot open output file - %s\n", OutName);
+            printf(Buff);
+        } break;
+
+        case Exec_FileError_KeyOpen:
+        {
+            char Buff[256];
+            snprintf(Buff, sizeof(Buff), "Error: Cannot open key sotore file\n");
+            printf(Buff);
+        } break;
 
         InvalidDefaultCase;
     }
 
-    printf("loki -[e | d] [-f filename | string] [-o filename]\n");
+    printf("loki -[e | d] -k[h | f] [-f filename | string] [-o filename]\n");
 }
 
 file_content
@@ -94,17 +141,18 @@ ReadEntireFileIntoMemory(char *FileName)
 {
     file_content Result = {};
 
-    FILE *File = fopen(FileName, "r");
+    FILE *File = fopen(FileName, "rb");
     if (File)
     {
         fseek(File, 0, SEEK_END);
         size_t FileSize = ftell(File);
-        Result.Size = AlignSize(FileSize);
 		fseek(File, 0, SEEK_SET);
 
-        Result.Data = (u8 *)calloc(Result.Size, sizeof(u8));
-        fread(Result.Data, FileSize, 1, File);
+        Result.Size = AlignSize((u32)FileSize);
+        Result.Data = (u8 *)malloc(Result.Size);
+        memset((void *)Result.Data, 0xE, Result.Size);
 
+        fread(Result.Data, FileSize, 1, File);
         fclose(File);
     }
 
@@ -125,7 +173,7 @@ InitDataFromFile(chipher_state *State)
     }
     else
     {
-        Error = Exec_FileError_Open;
+        Error = Exec_FileError_InOpen;
     }
 
     return Error;
@@ -136,7 +184,7 @@ WriteOutputToFile(chipher_state *State)
 {
     exec_error Error = ExecError_None;
 
-    FILE *File = fopen(State->OutputFileName, "w");
+    FILE *File = fopen(State->OutputFileName, "wb");
 
     if (File)
     {
@@ -145,7 +193,7 @@ WriteOutputToFile(chipher_state *State)
     }
     else
     {
-        Error = Exec_FileError_Open;
+        Error = Exec_FileError_OutOpen;
     }
 
     return Error;
@@ -156,12 +204,13 @@ ReadKeyFromFile(u8 *Buff, char *FileName)
 {
     exec_error Error = ExecError_None;
 
-    FILE *File = fopen(FileName, "r");
+    FILE *File = fopen(FileName, "rb");
 
     if (File)
     {
         fseek(File, 0, SEEK_END);
         size_t FileSize = ftell(File);
+        fseek(File, 0, SEEK_SET);
 
         if (FileSize >= LOKI_KEY_SIZE)
         {
@@ -174,7 +223,7 @@ ReadKeyFromFile(u8 *Buff, char *FileName)
     }
     else
     {
-        Error = Exec_FileError_Open;
+        Error = Exec_FileError_KeyOpen;
     }
 
     return Error;
@@ -227,7 +276,7 @@ SetChipherArgs(chipher_state *State, char **Args)
         }
         else if (((*Args)[0] == '-') && ((*Args)[1] == 'k'))
         {
-            u32 KeyFlagLen = strlen(*Args);
+            u32 KeyFlagLen = (u32)strlen(*Args);
             if (KeyFlagLen == 3)
             {
                 if ((*Args)[2] == 'h')
@@ -256,7 +305,7 @@ SetChipherArgs(chipher_state *State, char **Args)
 
             char *KeyValueStr = *++Args;
             State->InputKey.Data = KeyValueStr;
-            State->InputKey.Len = strlen(KeyValueStr);
+            State->InputKey.Len = (u32)strlen(KeyValueStr);
             *++Args;
         }
         else
@@ -273,7 +322,7 @@ SetChipherArgs(chipher_state *State, char **Args)
 
                     if ((strcmp(CurrArg, "-f") != 0) && (strcmp(CurrArg, "-o") != 0))
                     {
-                        TotalLen += (strlen(CurrArg) + 1);
+                        TotalLen += (u32)(strlen(CurrArg) + 1);
                     }
                     else
                     {
@@ -291,7 +340,7 @@ SetChipherArgs(chipher_state *State, char **Args)
                 char **CopyArg = StartArg;
                 for (; CopyArg != EndArgs; ++CopyArg)
                 {
-                    u32 StrLen = strlen(*CopyArg);
+                    u32 StrLen = (u32)strlen(*CopyArg);
                     memcpy((void *)Dest, (void *)*CopyArg, StrLen);
                     Dest += StrLen;
                     *Dest++ = ' ';
@@ -348,39 +397,6 @@ InitChiperState(chipher_state *State, int ArgCount, char **Args)
     }
 
     return Error;
-}
-
-b32
-ScanHexString(u8 *Out, char *In, u32 Size)
-{
-    b32 Succes = true;
-
-    u32 Shift[] = {0, 4};
-    u32 ShiftToggle = 1;
-	u32 MoveOutPtr = 0;
-
-    for (u32 Index = 0;
-        Index < Size;
-        ++Index)
-    {
-        u8 OutValue = *Out;
-        char InValue = In[Index];
-        u8 Digit = CharToDigit[InValue];
-
-        if ((Digit == 0) && (InValue != '0'))
-        {
-            Succes = false;
-            break;
-        }
-
-        OutValue |= Digit << Shift[ShiftToggle];
-        *Out = OutValue;
-        Out += MoveOutPtr;
-        ShiftToggle = !ShiftToggle;
-		MoveOutPtr = !MoveOutPtr;
-    }
-
-    return Succes;
 }
 
 exec_error
@@ -446,9 +462,7 @@ main(int ArgCount, char **Args)
     if (Error == ExecError_None)
     {
         loki_key Key = {};
-        //Error = InitLokiKey(&Key, ChiperState.InputKey);
-        Key.L = 0xABCDEF90;
-        Key.R = 0x12345678;
+        Error = InitLokiKey(&Key, ChiperState.InputKey);
 
         if ((Error == ExecError_None) && ChiperState.InputFileName)
         {
@@ -474,84 +488,49 @@ main(int ArgCount, char **Args)
 
     if(Error != ExecError_None)
     {
-        DispatchError(Error, ChiperState.OutputFileName);
+        DispatchError(Error, ChiperState.InputFileName, ChiperState.OutputFileName);
     }
-
+    
     return (s32)Error;
 }
 
-
-// NOTE: Test code
-s32
+// NOTE: Some test code ----------------------
+#if 0
+int
 test(void)
 {
+    ChiperState.InputFileName = "";
+    InitDataFromFile(&ChiperState);
+    ChiperState.ResultOutput = (u8 *)calloc(ChiperState.InputData.Size, sizeof(u8));
+
     loki_key Key = {};
-    Key.L = 0x12345678;
-    Key.R = 0x09ABCDEF;
-    
-    // Encrypt
-    char *EnText = "Hellow world from chipher";
-    u32 EnLen = strlen(EnText);
+    Key.L = 0xABCDEF90;
+    Key.R = 0x12345678;
 
-    u32 EnAdjLen = AlignSize(EnLen);
+    LokiEncrypt(Key, ChiperState.InputData.Data, ChiperState.InputData.Size, ChiperState.ResultOutput);
 
-    u8 *EnTest = (u8 *)calloc(EnAdjLen, sizeof(u8));
-    memcpy(EnTest, EnText, EnLen);
+    FILE *EFile = fopen("ENC.loki", "wb");
+    fwrite(ChiperState.ResultOutput, sizeof(u8), ChiperState.InputData.Size, EFile);
+    fclose(EFile);
 
-    u8 *EnDestMem = (u8 *)calloc(EnAdjLen, sizeof(u8));
-
-    LokiEncrypt(Key, EnTest, EnAdjLen, EnDestMem);
-    
-    for (u32 i = 0; i < EnAdjLen; ++i)
+    file_content SavedFile = ReadEntireFileIntoMemory("ENC.loki");
+     for (u32 i = 0; i < ChiperState.InputData.Size; i++)
     {
-        printf("%X", EnDestMem[i]);
-    }
-    printf("\n");
-    
-    const u8 DecByte[] = 
-    {
-        0xE2,0x99,0x27,0x14,0x19,0x36,0xBB,0xF7,0x4D,0xF6,0x55,0xFD,0x95,0xD0,0x1D,0x5E,
-        0xDE,0x1D,0x66,0x6D,0xE2,0xBB,0xC1,0x88,0x9E,0xED,0x9C,0x51,0xC8,0xCB,0xBC,0x35
-    };
-
-    u32 DecLen = sizeof(DecByte);
-    
-    if (DecLen != EnAdjLen)
-    {
-        printf("Length don't match");
-        return -1;
+        if (SavedFile.Data[i] != ChiperState.ResultOutput[i]) Assert(0);
     }
 
-    for (u32 i = 0; i < DecLen; ++i)
+    u8 *OutBuffer = (u8 *)calloc(ChiperState.InputData.Size, sizeof(u8));
+    LokiDecrypt(Key, SavedFile.Data, ChiperState.InputData.Size, OutBuffer);
+	
+    for (u32 i = 0; i < ChiperState.InputData.Size; i++)
     {
-        if (DecByte[i] != EnDestMem[i])
-        {
-            printf("Encypted data don't match");
-            return -1;
-        }
+        if (OutBuffer[i] != ChiperState.InputData.Data[i]) Assert(0);
     }
-    
-    u32 DecAdjLen = AlignSize(DecLen);
 
-    u8 *DecTest = (u8 *)calloc(DecAdjLen, sizeof(u8));
-    memcpy(DecTest, DecByte, DecLen);
+    FILE *DFile = fopen("DEC.loki", "wb");
+    fwrite(OutBuffer, sizeof(u8), ChiperState.InputData.Size, DFile);
+    fclose(DFile);
 
-    u8 *DecDestMem = (u8 *)calloc(DecAdjLen, sizeof(u8));
-
-    LokiDecrypt(Key, DecTest, DecAdjLen, DecDestMem);
-
-    for (u32 i = 0; i < DecAdjLen; ++i)
-    {
-        printf("%c", DecDestMem[i]);
-    }
-    printf("\n");
-
-	for (u32 i = 0; i < DecAdjLen; ++i)
-	{
-		if (EnTest[i] != DecDestMem[i])
-		{
-			printf("Plain data don't match");
-			return -1;
-		}
-	}
+    return 0
 }
+#endif
