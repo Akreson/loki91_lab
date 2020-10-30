@@ -3,7 +3,7 @@
 #define LOKI_KEY_SIZE 8
 
 #define ROUNDS	16
-#define BLOCK_SIZE 8
+#define LOKI_BLOCK_SIZE 8
 #define MASK12	0x0fff
 
 const u8 PerpVal[32] =
@@ -211,7 +211,7 @@ void
 LokiEncrypt(loki_key Key, u8 *InputData, u32 DataLen, u8 *OutputBuffer)
 {
     loki_subkeys SubKey = SetSubKey(Key);
-    u32 BlockCount = DataLen / BLOCK_SIZE;
+    u32 BlockCount = DataLen / LOKI_BLOCK_SIZE;
     
     work_block *InBlocks = (work_block *)InputData;
     work_block *OutBlocks = (work_block *)OutputBuffer;
@@ -240,7 +240,7 @@ void
 LokiDecrypt(loki_key Key, u8 *InputData, u32 DataLen, u8 *OutputBuffer)
 {
     loki_subkeys SubKey = SetSubKey(Key);
-    u32 BlockCount = DataLen / BLOCK_SIZE;
+    u32 BlockCount = DataLen / LOKI_BLOCK_SIZE;
     
     work_block *InBlocks = (work_block *)InputData;
     work_block *OutBlocks = (work_block *)OutputBuffer;

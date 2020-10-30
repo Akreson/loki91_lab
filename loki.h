@@ -63,7 +63,7 @@ struct chipher_state
 
 enum exec_error
 {
-    Exec_ParseError_InFileName = -13,
+    Exec_ParseError_InFileName = -14,
     Exec_ParseError_InFileSet,
     Exec_ParseError_InStrSet,
     Exec_ParseError_InNotSet,
@@ -76,6 +76,7 @@ enum exec_error
     Exec_FileError_InOpen,
     Exec_FileError_OutOpen,
     Exec_FileError_KeyOpen,
+    Exec_FileError_DecAlign,
 
     ExecError_None = 0,
 };

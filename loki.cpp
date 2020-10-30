@@ -2,7 +2,7 @@
 #include "loki91_lib.cpp"
 
 inline u32
-GetAlignmentOffsetForwad(u32 Value, u32 Alignment)
+GetAlignmentOffsetForwad(u32 Value, u32 Alignment = 8)
 {
 	Assert(!(Alignment & (Alignment - 1)));
 
@@ -21,7 +21,7 @@ GetAlignmentOffsetForwad(u32 Value, u32 Alignment)
 inline u32
 AlignSize(u32 DataSize)
 {
-    u32 AlignOffset = GetAlignmentOffsetForwad(DataSize, 8);
+    u32 AlignOffset = GetAlignmentOffsetForwad(DataSize);
     u32 Result = DataSize + AlignOffset;
     return Result;
 }
@@ -133,31 +133,25 @@ DispatchError(s32 Error, char *InName = 0, char *OutName = 0)
             printf("Error: Cannot open key sotore file\n");
         } break;
 
+        case Exec_FileError_DecAlign:
+        {
+            printf("Error: File not loki encrypted or has been modified\n");
+        } break;
+
         InvalidDefaultCase;
     }
 
     printf("loki -[e | d] -k[h | f] [-f filename | string] [-o filename]\n");
 }
 
-file_content
-ReadEntireFileIntoMemory(char *FileName)
+size_t
+GetFileSize(FILE *File)
 {
-    file_content Result = {};
+    size_t Result = 0;
 
-    FILE *File = fopen(FileName, "rb");
-    if (File)
-    {
-        fseek(File, 0, SEEK_END);
-        size_t FileSize = ftell(File);
-		fseek(File, 0, SEEK_SET);
-
-        Result.Size = AlignSize((u32)FileSize);
-        Result.Data = (u8 *)malloc(Result.Size);
-        memset((void *)Result.Data, 0xE, Result.Size);
-
-        fread(Result.Data, FileSize, 1, File);
-        fclose(File);
-    }
+    fseek(File, 0, SEEK_END);
+    Result = ftell(File);
+	fseek(File, 0, SEEK_SET);
 
     return Result;
 }
@@ -166,18 +160,61 @@ exec_error
 InitDataFromFile(chipher_state *State)
 {
     exec_error Error = ExecError_None;
+    FILE *InputFile = fopen(State->InputFileName, "rb");
 
-    file_content InputFileContent = ReadEntireFileIntoMemory(State->InputFileName);
-    
-    if (InputFileContent.Data)
+    if(InputFile)
     {
-        State->InputData.Data = InputFileContent.Data;
-        State->InputData.Size = InputFileContent.Size;
+        u32 FileSize = (u32)GetFileSize(InputFile);
+        u32 AlignOffset = GetAlignmentOffsetForwad(FileSize);
+
+        switch (State->OpType)
+        {
+            case ChipherOpType_Encrypt:
+            {
+                u32 AllocSize;
+
+                if (AlignOffset == 0)
+                {
+                    AllocSize = FileSize + LOKI_BLOCK_SIZE; 
+                }
+                else
+                {
+                    AllocSize = FileSize + AlignOffset;
+                }
+
+                State->InputData.Size = AllocSize;
+                State->InputData.Data = (u8 *)malloc(AllocSize);
+
+                u32 BytesToFill = AllocSize - FileSize;
+                u8 *Data = State->InputData.Data + FileSize;
+                memset(Data, AlignOffset, BytesToFill);
+
+                fread(State->InputData.Data, FileSize, 1, InputFile);
+                fclose(InputFile);
+            } break;
+
+            case ChipherOpType_Decrypt:
+            {
+                if (AlignOffset == 0)
+                {
+                    State->InputData.Size = FileSize;
+                    State->InputData.Data = (u8 *)malloc(FileSize);
+                    
+                    fread(State->InputData.Data, FileSize, 1, InputFile);
+                    fclose(InputFile);
+                }
+                else
+                {
+                    Error = Exec_FileError_DecAlign;
+                }
+            } break;
+        }
     }
     else
     {
         Error = Exec_FileError_InOpen;
     }
+
 
     return Error;
 }
@@ -191,7 +228,24 @@ WriteOutputToFile(chipher_state *State)
 
     if (File)
     {
-        fwrite(State->ResultOutput, sizeof(u8), State->InputData.Size, File);
+        switch (State->OpType)
+        {
+            case ChipherOpType_Encrypt:
+            {
+                fwrite(State->ResultOutput, sizeof(u8), State->InputData.Size, File);
+            } break;
+
+            case ChipherOpType_Decrypt:
+            {
+                u32 PaddingSize = (u32)State->ResultOutput[State->InputData.Size - 1];
+                PaddingSize = (PaddingSize != 0) ? PaddingSize : LOKI_BLOCK_SIZE;
+                Assert(PaddingSize != 8);
+
+                u32 WriteSize = State->InputData.Size - PaddingSize;
+                fwrite(State->ResultOutput, sizeof(u8), WriteSize, File);
+            } break;
+        }
+
         fclose(File);
     }
     else
