@@ -239,7 +239,7 @@ WriteOutputToFile(chipher_state *State)
             {
                 u32 PaddingSize = (u32)State->ResultOutput[State->InputData.Size - 1];
                 PaddingSize = (PaddingSize != 0) ? PaddingSize : LOKI_BLOCK_SIZE;
-                Assert(PaddingSize != 8);
+                Assert(PaddingSize < LOKI_BLOCK_SIZE);
 
                 u32 WriteSize = State->InputData.Size - PaddingSize;
                 fwrite(State->ResultOutput, sizeof(u8), WriteSize, File);
